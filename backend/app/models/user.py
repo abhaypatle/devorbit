@@ -36,7 +36,10 @@ class ProjectStatus(str, Enum):
 class MilestoneStatus(str, Enum):
     PENDING = "PENDING"
     IN_PROGRESS = "IN_PROGRESS"
+    AWAITING_ESCROW = "AWAITING_ESCROW"
+    ESCROW_LOCKED = "ESCROW_LOCKED"
     SUBMITTED = "SUBMITTED"
+    REVIEW = "REVIEW"
     APPROVED = "APPROVED"
     PAID = "PAID"
 

@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import exists, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import require_roles
 from app.db.session import get_db
 from app.models.project import Project, ProjectMilestone
 from app.models.user import User
-from app.schemas.project import ProjectMilestoneRead, ProjectRead
+from app.schemas.project import DeveloperClaimRead, DeveloperProjectRead, MilestoneSubmission, ProjectMilestoneRead, ProjectRead
+from app.services.asset_fallback import developer_starter_kit
 
 router = APIRouter()
 
@@ -54,7 +55,7 @@ def calculate_skill_match(skills: list[str], project: Project) -> int:
         terms = _skill_terms(requirement)
         if developer_terms.intersection(terms):
             matched_weight += weight
-    return round(100 * matched_weight / total_weight)
+    return int(100 * matched_weight / total_weight)
 
 
 @router.get("/projects/available", response_model=list[ProjectRead])
@@ -65,7 +66,12 @@ async def list_available_projects(
     result = await db.execute(
         select(Project).where(
             Project.assigned_developer_id.is_(None),
-            Project.status.in_(["SUBMITTED", "ESTIMATED"]),
+            Project.status == "ESTIMATED",
+            exists().where(ProjectMilestone.project_id == Project.id),
+            ~exists().where(
+                ProjectMilestone.project_id == Project.id,
+                ProjectMilestone.status != "ESCROW_LOCKED",
+            ),
         )
     )
     projects = list(result.scalars().all())
@@ -80,7 +86,7 @@ async def list_available_projects(
     ]
 
 
-@router.post("/projects/{project_id}/claim", response_model=ProjectRead)
+@router.post("/projects/{project_id}/claim", response_model=DeveloperClaimRead)
 async def claim_project(
     project_id: str,
     current_user: User = Depends(require_roles("DEVELOPER")),
@@ -89,29 +95,85 @@ async def claim_project(
     project = await db.get(Project, project_id)
     if not project:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
-    if project.assigned_developer_id is not None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Project already assigned")
+    match_percentage = calculate_skill_match(current_user.skills or [], project)
+    if match_percentage < 80:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Claim requires at least 80% skill match; current match is {match_percentage}%.",
+        )
+    milestones_result = await db.execute(
+        select(ProjectMilestone).where(ProjectMilestone.project_id == project_id)
+    )
+    milestones = list(milestones_result.scalars().all())
+    if not milestones or any(milestone.status != "ESCROW_LOCKED" or not milestone.escrow_locked for milestone in milestones):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="The client must fund every milestone escrow before this project can be claimed.",
+        )
 
-    project.assigned_developer_id = current_user.id
-    project.status = "ASSIGNED"
+    result = await db.execute(
+        update(Project)
+        .where(
+            Project.id == project_id,
+            Project.assigned_developer_id.is_(None),
+            Project.status == "ESTIMATED",
+        )
+        .values(assigned_developer_id=current_user.id, status="IN_PROGRESS")
+        .returning(Project.id)
+    )
+    if result.scalar_one_or_none() is None:
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Project is no longer available to claim.")
+    await db.execute(
+        update(ProjectMilestone)
+        .where(ProjectMilestone.project_id == project_id, ProjectMilestone.status == "ESCROW_LOCKED")
+        .values(status="IN_PROGRESS")
+    )
     await db.commit()
-    await db.refresh(project)
-    return project
+    project = await db.get(Project, project_id)
+    if project is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+    return {
+        **ProjectRead.model_validate(project).model_dump(),
+        "match_percentage": match_percentage,
+        "starter_kit": developer_starter_kit(
+            project.business_category,
+            project.design_preferences,
+        ),
+    }
 
 
-@router.get("/projects/active", response_model=list[ProjectRead])
+@router.get("/projects/active", response_model=list[DeveloperProjectRead])
 async def list_active_projects(
     current_user: User = Depends(require_roles("DEVELOPER")),
     db: AsyncSession = Depends(get_db),
-) -> list[Project]:
+) -> list[dict]:
     result = await db.execute(select(Project).where(Project.assigned_developer_id == current_user.id).order_by(Project.created_at.desc()))
-    return list(result.scalars().all())
+    projects = list(result.scalars().all())
+    if not projects:
+        return []
+    milestone_result = await db.execute(
+        select(ProjectMilestone).where(ProjectMilestone.project_id.in_([project.id for project in projects]))
+    )
+    milestones_by_project: dict[str, list[ProjectMilestone]] = {}
+    for milestone in milestone_result.scalars().all():
+        milestones_by_project.setdefault(milestone.project_id, []).append(milestone)
+    return [
+        {
+            **ProjectRead.model_validate(project).model_dump(),
+            "milestones": [
+                ProjectMilestoneRead.model_validate(milestone).model_dump()
+                for milestone in milestones_by_project.get(project.id, [])
+            ],
+        }
+        for project in projects
+    ]
 
 
 @router.patch("/milestones/{milestone_id}/submit", response_model=ProjectMilestoneRead)
 async def submit_milestone(
     milestone_id: str,
-    proof_urls: list[str] | None = None,
+    payload: MilestoneSubmission,
     current_user: User = Depends(require_roles("DEVELOPER")),
     db: AsyncSession = Depends(get_db),
 ) -> ProjectMilestone:
@@ -122,10 +184,18 @@ async def submit_milestone(
     project = await db.get(Project, milestone.project_id)
     if project is None or project.assigned_developer_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Milestone not assigned to you")
+    if project.status == "CHANGE_REQUEST":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Work is paused until the client resolves the change request.")
 
-    milestone.proof_urls = proof_urls or milestone.proof_urls or []
+    if milestone.status != "IN_PROGRESS" or not milestone.escrow_locked:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This milestone has already been submitted.")
+    milestone.staging_url = str(payload.staging_url)
+    milestone.github_url = str(payload.github_url)
+    milestone.proof_urls = [str(payload.staging_url), str(payload.github_url)]
     milestone.status = "SUBMITTED"
-    project.progress_percentage = min(100, max(project.progress_percentage, 40))
+    project.status = "REVIEW"
+    project.staging_preview_url = str(payload.staging_url)
+    project.progress_percentage = min(99, max(project.progress_percentage, 40))
     await db.commit()
     await db.refresh(milestone)
     return milestone
