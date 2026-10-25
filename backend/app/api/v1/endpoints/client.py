@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,6 +14,60 @@ from app.schemas.project import ChangeRequestCreate, ChangeRequestRead, ProjectC
 
 router = APIRouter()
 
+BASE_COST_BY_CATEGORY = {
+    "kirana": 18000,
+    "restaurant": 24000,
+    "clinic": 26000,
+    "salon": 17000,
+    "coaching": 22000,
+    "portfolio": 12000,
+    "e-commerce": 30000,
+}
+FEATURE_COSTS = {
+    "online payment": 5000,
+    "whatsapp bot": 4000,
+    "admin panel": 6000,
+    "inventory": 4500,
+    "booking": 5000,
+    "authentication": 3500,
+    "analytics": 3000,
+}
+URGENCY_MULTIPLIERS = {"STANDARD": 1.0, "URGENT": 1.3, "ASAP": 1.6}
+
+
+def estimate_project(payload: ProjectCreate) -> dict[str, int | float | str]:
+    preferences = payload.design_preferences
+    base_cost = BASE_COST_BY_CATEGORY.get(payload.business_category.casefold(), 20000)
+    feature_cost = sum(
+        FEATURE_COSTS.get(feature.casefold(), 2000)
+        for feature in set(preferences.features + preferences.payment_methods)
+    )
+    platform_cost = {"web app": 0, "mobile pwa": 5000, "desktop": 8000}.get(
+        preferences.target_platform.casefold(), 0
+    )
+    language_cost = max(0, len(set(preferences.languages)) - 1) * 1800
+    subtotal = base_cost + feature_cost + platform_cost + language_cost
+    urgency = preferences.urgency.upper()
+    urgency_multiplier = URGENCY_MULTIPLIERS.get(urgency, URGENCY_MULTIPLIERS["STANDARD"])
+    client_budget = math.ceil(subtotal * urgency_multiplier / 500) * 500
+    developer_payout = math.floor(client_budget * 0.68 / 100) * 100
+
+    stack = {item.casefold() for item in preferences.tech_stack}
+    maintenance = 1200 + 300 * len(stack)
+    if preferences.target_platform.casefold() != "web app":
+        maintenance += 500
+    if "docker" in stack or "aws" in stack or "azure" in stack:
+        maintenance += 700
+    return {
+        "client_budget": client_budget,
+        "developer_payout": developer_payout,
+        "monthly_maintenance_fee": maintenance,
+        "base_cost": base_cost,
+        "feature_cost": feature_cost,
+        "urgency_multiplier": urgency_multiplier,
+        "urgency": urgency,
+    }
+
 
 @router.post("/projects", response_model=ProjectRead, status_code=status.HTTP_201_CREATED)
 async def create_project(
@@ -19,12 +75,14 @@ async def create_project(
     current_user: User = Depends(require_roles("CLIENT")),
     db: AsyncSession = Depends(get_db),
 ) -> Project:
+    design_preferences = payload.design_preferences.model_dump()
+    design_preferences["recommended_estimate"] = estimate_project(payload)
     project = Project(
         client_id=current_user.id,
         title=payload.title,
         business_category=payload.business_category,
         description=payload.description or "",
-        design_preferences=payload.design_preferences.model_dump(),
+        design_preferences=design_preferences,
         status=ProjectStatus.SUBMITTED,
     )
     db.add(project)

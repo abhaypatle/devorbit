@@ -41,6 +41,8 @@ export interface DashboardProject {
     colors?: Record<string, string>;
     sample_links?: string[];
     features?: string[];
+    tech_stack?: string[];
+    recommended_estimate?: RecommendedEstimate;
     [key: string]: unknown;
   };
   status: string;
@@ -52,4 +54,15 @@ export interface DashboardProject {
   is_watermarked: boolean;
   created_at: string | null;
   milestones?: Milestone[];
+  match_percentage?: number;
+}
+
+export interface RecommendedEstimate {
+  client_budget: number;
+  developer_payout: number;
+  monthly_maintenance_fee: number;
+  base_cost: number;
+  feature_cost: number;
+  urgency_multiplier: number;
+  urgency: string;
 }

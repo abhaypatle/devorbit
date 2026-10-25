@@ -1,18 +1,33 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useForm } from 'react-hook-form';
+import type { UseFormRegister } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
-  ArrowRight, BriefcaseBusiness, Building2, CheckCircle2, CreditCard, DollarSign,
-  FileText, Gauge, LogOut, Rocket, ShieldCheck, Sparkles, Wallet,
+  ArrowRight, BriefcaseBusiness, Building2, Check, CheckCircle2, CreditCard,
+  DollarSign, FileText, Gauge, LayoutTemplate, LogOut, Palette, Rocket,
+  ShieldCheck, Sparkles, Wallet,
 } from 'lucide-react';
+import { motion } from 'framer-motion';
 import axios from 'axios';
 import { api, clearAuthToken, setAuthToken } from './lib/api';
 import type { AuthResponse, DashboardProject, User } from './types';
 
-const panelClass = 'rounded-3xl border border-white/10 bg-slate-900/70 p-6';
+const panelClass = 'rounded-3xl border border-white/10 bg-slate-900/55 p-6 shadow-xl shadow-black/10 backdrop-blur-xl';
 const fieldClass = 'w-full rounded-xl border border-white/10 bg-slate-950 px-3 py-2.5 text-white outline-none transition focus:border-violet-400';
+const themes = [
+  { name: 'Indigo Tech', primary: '#6366f1', secondary: '#22d3ee', surface: '#111827' },
+  { name: 'Emerald FinTech', primary: '#10b981', secondary: '#a3e635', surface: '#10231e' },
+  { name: 'Violet Cyber', primary: '#a855f7', secondary: '#ec4899', surface: '#20132b' },
+  { name: 'Crimson Retail', primary: '#f43f5e', secondary: '#fb923c', surface: '#2a161c' },
+] as const;
+const archetypes = [
+  { name: 'Storefront', detail: 'Product-led shop', icon: Building2 },
+  { name: 'Booking Portal', detail: 'Appointments & slots', icon: CheckCircle2 },
+  { name: 'Dashboard', detail: 'Data & operations', icon: Gauge },
+  { name: 'Portfolio', detail: 'Work & profile', icon: LayoutTemplate },
+] as const;
 
 const projectSchema = z.object({
   title: z.string().min(3, 'Project title is required').max(200),
@@ -20,8 +35,16 @@ const projectSchema = z.object({
   description: z.string().min(12, 'Please describe the project in more detail'),
   primaryColor: z.string(),
   secondaryColor: z.string(),
+  theme: z.string(),
+  templateArchetype: z.string(),
   features: z.array(z.string()),
+  techStack: z.array(z.string()),
   sampleLinks: z.string(),
+  targetPlatform: z.enum(['Web App', 'Mobile PWA', 'Desktop']),
+  languages: z.array(z.string()).min(1),
+  authPreference: z.enum(['Phone OTP', 'Email']),
+  paymentMethods: z.array(z.string()),
+  urgency: z.enum(['STANDARD', 'URGENT', 'ASAP']),
 });
 type ProjectForm = z.infer<typeof projectSchema>;
 
@@ -71,7 +94,9 @@ function App() {
     resolver: zodResolver(projectSchema),
     defaultValues: {
       title: '', category: 'Kirana', description: '', primaryColor: '#7c3aed',
-      secondaryColor: '#e2e8f0', features: [], sampleLinks: '',
+      secondaryColor: '#e2e8f0', theme: 'Indigo Tech', templateArchetype: 'Storefront',
+      features: [], techStack: ['React', 'FastAPI'], sampleLinks: '', targetPlatform: 'Web App',
+      languages: ['English'], authPreference: 'Email', paymentMethods: [], urgency: 'STANDARD',
     },
   });
   const estimateForm = useForm<EstimateForm>({
@@ -84,6 +109,9 @@ function App() {
   });
 
   const role = user?.role;
+  const selectedThemeName = intakeForm.watch('theme');
+  const selectedTheme = themes.find((theme) => theme.name === selectedThemeName) ?? themes[0];
+  const selectedArchetype = intakeForm.watch('templateArchetype');
 
   useEffect(() => {
     const token = localStorage.getItem('devorbit_token');
@@ -229,6 +257,14 @@ function App() {
           colors: { primary: values.primaryColor, secondary: values.secondaryColor },
           sample_links: values.sampleLinks.split(/\s*,\s*/).filter(Boolean),
           features: values.features,
+          tech_stack: values.techStack,
+          target_platform: values.targetPlatform,
+          languages: values.languages,
+          auth_preference: values.authPreference,
+          payment_methods: values.paymentMethods,
+          urgency: values.urgency,
+          theme: values.theme,
+          template_archetype: values.templateArchetype,
         },
       });
       intakeForm.reset();
@@ -303,18 +339,25 @@ function App() {
 
   const renderMetrics = () => (
     <section className="mb-8 grid gap-4 md:grid-cols-3">
-      {metrics.map(({ label, value, icon: Icon }) => (
-        <div key={label} className={panelClass}>
+      {metrics.map(({ label, value, icon: Icon }, index) => (
+        <motion.div
+          key={label}
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: index * 0.08 }}
+          whileHover={{ y: -4, scale: 1.01 }}
+          className={`${panelClass} relative overflow-hidden before:absolute before:inset-0 before:-z-10 before:rounded-3xl before:bg-gradient-to-br before:from-violet-500/20 before:via-transparent before:to-cyan-400/10`}
+        >
           <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-violet-500/15 text-violet-300"><Icon className="h-5 w-5" /></div>
           <div className="text-xs uppercase tracking-[0.2em] text-slate-400">{label}</div>
           <div className="mt-2 text-3xl font-semibold text-white">{value}</div>
-        </div>
+        </motion.div>
       ))}
     </section>
   );
 
   const renderClient = () => (
-    <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
+    <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
       <section className={panelClass}>
         <div className="mb-5 flex items-center gap-2"><Sparkles className="h-5 w-5 text-violet-300" /><h2 className="text-xl font-semibold text-white">Project intake</h2></div>
         <form className="space-y-5" onSubmit={intakeForm.handleSubmit(submitProject)}>
@@ -323,21 +366,68 @@ function App() {
             <Field label="Business category"><select {...intakeForm.register('category')} className={fieldClass}>{['Kirana', 'Restaurant', 'Clinic', 'Salon', 'Coaching', 'Portfolio', 'E-Commerce'].map((item) => <option key={item}>{item}</option>)}</select></Field>
           </div>
           <Field label="Functional description" error={intakeForm.formState.errors.description?.message}><textarea {...intakeForm.register('description')} rows={4} className={fieldClass} /></Field>
-          <div className="grid gap-4 md:grid-cols-2">
-            <Field label="Primary color"><input type="color" {...intakeForm.register('primaryColor')} className={`${fieldClass} h-12 p-1`} /></Field>
-            <Field label="Secondary color"><input type="color" {...intakeForm.register('secondaryColor')} className={`${fieldClass} h-12 p-1`} /></Field>
-          </div>
-          <Field label="Reference URLs (comma separated)"><input {...intakeForm.register('sampleLinks')} className={fieldClass} placeholder="https://example.com" /></Field>
-          <fieldset>
-            <legend className="mb-2 text-sm text-slate-300">Requested features</legend>
-            <div className="flex flex-wrap gap-3">
-              {['Online Payment', 'WhatsApp Bot', 'Admin Panel', 'Inventory'].map((feature) => (
-                <label key={feature} className="flex items-center gap-2 rounded-full border border-white/10 px-3 py-2 text-sm text-slate-300">
-                  <input type="checkbox" value={feature} {...intakeForm.register('features')} className="accent-violet-500" />{feature}
-                </label>
+
+          <section className="space-y-4 rounded-2xl border border-white/10 bg-slate-950/50 p-4">
+            <div className="flex items-center gap-2 text-white"><Palette className="h-4 w-4 text-violet-300" /><h3 className="font-medium">Design studio · live palette</h3></div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {themes.map((theme) => (
+                <motion.button
+                  key={theme.name}
+                  whileHover={{ y: -2 }}
+                  whileTap={{ scale: 0.98 }}
+                  type="button"
+                  onClick={() => {
+                    intakeForm.setValue('theme', theme.name, { shouldDirty: true });
+                    intakeForm.setValue('primaryColor', theme.primary, { shouldDirty: true });
+                    intakeForm.setValue('secondaryColor', theme.secondary, { shouldDirty: true });
+                  }}
+                  className={`flex items-center gap-3 rounded-xl border p-3 text-left transition ${selectedThemeName === theme.name ? 'border-violet-400 bg-violet-500/10' : 'border-white/10 bg-slate-900/70 hover:border-white/20'}`}
+                >
+                  <span className="flex -space-x-1"><i className="h-6 w-6 rounded-full border-2 border-slate-900" style={{ backgroundColor: theme.primary }} /><i className="h-6 w-6 rounded-full border-2 border-slate-900" style={{ backgroundColor: theme.secondary }} /></span>
+                  <span className="text-sm text-slate-200">{theme.name}</span>
+                  {selectedThemeName === theme.name && <Check className="ml-auto h-4 w-4 text-violet-300" />}
+                </motion.button>
               ))}
             </div>
-          </fieldset>
+            <div className="grid gap-3 sm:grid-cols-[1fr_1fr_1.5fr]">
+              <Field label="Custom primary hex"><input type="color" {...intakeForm.register('primaryColor')} onChange={(event) => { intakeForm.setValue('primaryColor', event.target.value, { shouldDirty: true }); intakeForm.setValue('theme', 'Custom', { shouldDirty: true }); }} className={`${fieldClass} h-11 p-1`} /></Field>
+              <Field label="Custom accent hex"><input type="color" {...intakeForm.register('secondaryColor')} onChange={(event) => { intakeForm.setValue('secondaryColor', event.target.value, { shouldDirty: true }); intakeForm.setValue('theme', 'Custom', { shouldDirty: true }); }} className={`${fieldClass} h-11 p-1`} /></Field>
+              <motion.div
+                key={`${selectedThemeName}-${selectedArchetype}`}
+                initial={{ opacity: 0.6, scale: 0.98 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="overflow-hidden rounded-xl border p-3"
+                style={{ borderColor: `${intakeForm.watch('primaryColor')}88`, background: `linear-gradient(135deg, ${intakeForm.watch('primaryColor')}24, ${intakeForm.watch('secondaryColor')}18, ${selectedTheme.surface})` }}
+              >
+                <div className="flex items-center justify-between text-xs text-white/70"><span>{selectedThemeName}</span><span>{selectedArchetype}</span></div>
+                <div className="mt-3 h-2 w-1/2 rounded-full" style={{ backgroundColor: intakeForm.watch('primaryColor') }} />
+                <div className="mt-2 flex gap-2"><i className="h-8 flex-1 rounded-md bg-white/10" /><i className="h-8 w-1/3 rounded-md" style={{ backgroundColor: `${intakeForm.watch('secondaryColor')}88` }} /></div>
+                <span className="mt-2 inline-block rounded-full px-2 py-1 text-[10px] font-medium text-slate-950" style={{ backgroundColor: intakeForm.watch('primaryColor') }}>Preview card</span>
+              </motion.div>
+            </div>
+            <div>
+              <p className="mb-2 text-sm text-slate-300">Choose a template archetype</p>
+              <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+                {archetypes.map(({ name, detail, icon: Icon }) => (
+                  <motion.button key={name} whileHover={{ y: -2 }} whileTap={{ scale: 0.98 }} type="button" onClick={() => intakeForm.setValue('templateArchetype', name, { shouldDirty: true })} className={`rounded-xl border p-3 text-left transition ${selectedArchetype === name ? 'border-violet-400 bg-violet-500/10' : 'border-white/10 bg-slate-900/70 hover:border-white/20'}`}>
+                    <Icon className="mb-2 h-4 w-4" style={{ color: intakeForm.watch('primaryColor') }} />
+                    <span className="block text-xs font-medium text-white">{name}</span><span className="mt-1 block text-[10px] text-slate-400">{detail}</span>
+                  </motion.button>
+                ))}
+              </div>
+            </div>
+          </section>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <Field label="Target platform"><select {...intakeForm.register('targetPlatform')} className={fieldClass}><option>Web App</option><option>Mobile PWA</option><option>Desktop</option></select></Field>
+            <Field label="Authentication preference"><select {...intakeForm.register('authPreference')} className={fieldClass}><option>Email</option><option>Phone OTP</option></select></Field>
+            <Field label="Project urgency"><select {...intakeForm.register('urgency')} className={fieldClass}><option value="STANDARD">Standard timeline</option><option value="URGENT">Urgent</option><option value="ASAP">ASAP</option></select></Field>
+            <Field label="Reference URLs (comma separated)"><input {...intakeForm.register('sampleLinks')} className={fieldClass} placeholder="https://example.com" /></Field>
+          </div>
+          <CheckGroup label="Languages" options={['English', 'Hindi', 'Marathi']} name="languages" register={intakeForm.register} />
+          <CheckGroup label="Payment methods" options={['UPI', 'Credit/Debit Card', 'Net Banking', 'Cash on Delivery']} name="paymentMethods" register={intakeForm.register} />
+          <CheckGroup label="Requested features" options={['Online Payment', 'WhatsApp Bot', 'Admin Panel', 'Inventory', 'Booking', 'Analytics']} name="features" register={intakeForm.register} />
+          <CheckGroup label="Preferred technology stack" options={['React', 'FastAPI', 'Python', 'Tailwind', 'PostgreSQL', 'Docker']} name="techStack" register={intakeForm.register} />
           <button disabled={loading} type="submit" className="inline-flex items-center gap-2 rounded-full bg-violet-500 px-5 py-2.5 font-medium text-white disabled:opacity-60">
             Submit project <ArrowRight className="h-4 w-4" />
           </button>
@@ -348,20 +438,20 @@ function App() {
         {projects.length === 0 ? <p className="text-sm text-slate-400">Your submitted projects will appear here.</p> : projects.map((project) => {
           const activeMilestone = project.milestones?.find((milestone) => ['IN_PROGRESS', 'SUBMITTED'].includes(milestone.status)) ?? project.milestones?.find((milestone) => milestone.status === 'PENDING');
           return (
-            <article key={project.id} className="rounded-2xl border border-white/10 bg-slate-950/60 p-4">
+            <motion.article key={project.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} whileHover={{ y: -2 }} className="rounded-2xl border border-white/10 bg-slate-950/60 p-4">
               <div className="flex items-start justify-between gap-3"><div><h3 className="font-medium text-white">{project.title}</h3><p className="text-sm text-slate-400">{project.business_category} · {project.status}</p></div><span className="text-sm font-medium text-violet-200">{project.progress_percentage}%</span></div>
               <div className="mt-3 h-2 rounded-full bg-slate-800"><div className="h-2 rounded-full bg-gradient-to-r from-violet-500 to-indigo-400" style={{ width: `${Math.min(100, Math.max(0, project.progress_percentage))}%` }} /></div>
               <p className="mt-3 text-sm text-slate-300">Active milestone: {activeMilestone?.title ?? (project.status === 'COMPLETED' ? 'Completed' : 'Awaiting estimate')}</p>
               {project.staging_preview_url && <a className="mt-2 inline-block text-sm text-violet-300 underline" href={project.staging_preview_url} target="_blank" rel="noreferrer">Open preview {project.is_watermarked ? '(watermarked)' : ''}</a>}
-            </article>
+            </motion.article>
           );
         })}
       </section>
-    </div>
+    </motion.div>
   );
 
   const renderDeveloper = () => (
-    <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+    <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
       <section className={panelClass}>
         <h2 className="mb-5 text-xl font-semibold text-white">Available projects</h2>
         <div className="space-y-4">
@@ -382,16 +472,25 @@ function App() {
           {activeProjects.length === 0 ? <p className="text-sm text-slate-400">Projects you claim will appear here.</p> : activeProjects.map((project) => <ProjectItem key={project.id} project={project} />)}
         </section>
       </div>
-    </div>
+    </motion.div>
   );
 
   const renderAdmin = () => (
-    <div className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
+    <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
       <section className={panelClass}>
         <div className="mb-5 flex items-center justify-between"><h2 className="text-xl font-semibold text-white">Pending submissions</h2><span className="rounded-full bg-amber-500/15 px-3 py-1 text-xs text-amber-200">{pendingProjects.length} pending</span></div>
         <div className="space-y-4">
           {pendingProjects.length === 0 && <p className="text-sm text-slate-400">No submissions waiting for an estimate.</p>}
-          {pendingProjects.map((project) => <ProjectItem key={project.id} project={project} action={<button type="button" onClick={() => { estimateForm.reset(); setSelectedProject(project); }} className="rounded-full bg-violet-500 px-4 py-2 text-sm font-medium text-white">Estimate &amp; Approve</button>} />)}
+          {pendingProjects.map((project) => <ProjectItem key={project.id} project={project} action={<button type="button" onClick={() => {
+            const recommended = project.design_preferences.recommended_estimate;
+            estimateForm.reset({
+              client_budget: recommended?.client_budget ?? project.client_budget ?? 0,
+              developer_payout: recommended?.developer_payout ?? project.developer_payout ?? 0,
+              monthly_maintenance_fee: recommended?.monthly_maintenance_fee ?? project.monthly_maintenance_fee ?? 0,
+              milestone_titles: 'Discovery, Design, Development, QA',
+            });
+            setSelectedProject(project);
+          }} className="rounded-full bg-violet-500 px-4 py-2 text-sm font-medium text-white">Estimate &amp; Approve</button>} />)}
         </div>
       </section>
       <section className={panelClass}>
@@ -403,7 +502,7 @@ function App() {
           <FinancialRow label="Maintenance contracts" value={financials?.active_maintenance_contracts ?? 0} />
         </div>
       </section>
-    </div>
+    </motion.div>
   );
 
   return (
@@ -455,16 +554,20 @@ function App() {
 
       {selectedProject && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" role="dialog" aria-modal="true" aria-labelledby="estimate-title">
-          <div className="w-full max-w-lg rounded-3xl border border-white/10 bg-slate-900 p-6">
+          <motion.div initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} className="w-full max-w-lg rounded-3xl border border-white/10 bg-slate-900 p-6">
             <div className="mb-5 flex items-start justify-between"><div><p className="text-sm text-slate-400">Estimate project</p><h2 id="estimate-title" className="text-xl font-semibold text-white">{selectedProject.title}</h2></div><button type="button" onClick={() => setSelectedProject(null)} className="text-slate-400">Close</button></div>
-            <form className="space-y-4" onSubmit={estimateForm.handleSubmit(submitEstimate)}>
+                {selectedProject.design_preferences.recommended_estimate && <div className="mb-4 rounded-xl border border-violet-400/20 bg-violet-500/10 p-3 text-sm text-violet-100">
+                  <p className="font-medium">AI heuristic recommendation · {selectedProject.design_preferences.recommended_estimate.urgency} ×{selectedProject.design_preferences.recommended_estimate.urgency_multiplier}</p>
+                  <p className="mt-1 text-violet-100/80">Budget {money(selectedProject.design_preferences.recommended_estimate.client_budget)} · Developer payout {money(selectedProject.design_preferences.recommended_estimate.developer_payout)} · Maintenance {money(selectedProject.design_preferences.recommended_estimate.monthly_maintenance_fee)}/mo</p>
+                </div>}
+                <form className="space-y-4" onSubmit={estimateForm.handleSubmit(submitEstimate)}>
               <Field label="Client budget (₹)"><input type="number" min="0.01" step="0.01" {...estimateForm.register('client_budget')} className={fieldClass} /></Field>
               <Field label="Developer payout (₹)"><input type="number" min="0.01" step="0.01" {...estimateForm.register('developer_payout')} className={fieldClass} /></Field>
               <Field label="Monthly maintenance fee (₹)"><input type="number" min="0" step="0.01" {...estimateForm.register('monthly_maintenance_fee')} className={fieldClass} /></Field>
               <Field label="Milestone titles (comma separated)"><textarea rows={3} {...estimateForm.register('milestone_titles')} className={fieldClass} /></Field>
               <button disabled={loading} type="submit" className="w-full rounded-full bg-violet-500 px-5 py-3 font-medium text-white disabled:opacity-60">Estimate &amp; Approve</button>
             </form>
-          </div>
+      </motion.div>
         </div>
       )}
     </div>
@@ -475,13 +578,23 @@ function Field({ label, error, children }: { label: string; error?: string; chil
   return <label className="block space-y-2 text-sm text-slate-300"><span>{label}</span>{children}{error && <span className="block text-xs text-rose-300">{error}</span>}</label>;
 }
 
+function CheckGroup({ label, options, name, register }: { label: string; options: string[]; name: 'languages' | 'paymentMethods' | 'features' | 'techStack'; register: UseFormRegister<ProjectForm> }) {
+  return <fieldset><legend className="mb-2 text-sm text-slate-300">{label}</legend><div className="flex flex-wrap gap-2">
+    {options.map((option) => <label key={option} className="flex cursor-pointer items-center gap-2 rounded-full border border-white/10 bg-slate-950/60 px-3 py-2 text-sm text-slate-300 transition hover:border-violet-400/50">
+      <input type="checkbox" value={option} {...register(name)} className="accent-violet-500" />{option}
+    </label>)}
+  </div></fieldset>;
+}
+
 function ProjectItem({ project, action }: { project: DashboardProject; action?: ReactNode }) {
-  return <article className="rounded-2xl border border-white/10 bg-slate-950/60 p-4">
-    <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="font-medium text-white">{project.title}</h3><p className="text-sm text-slate-400">{project.business_category} · {project.status}</p></div>{action}</div>
+  return <motion.article initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} whileHover={{ y: -2 }} className="rounded-2xl border border-white/10 bg-slate-950/60 p-4">
+    <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="font-medium text-white">{project.title}</h3><p className="text-sm text-slate-400">{project.business_category} · {project.status}</p>
+      {project.match_percentage !== undefined && <span className="mt-2 inline-flex rounded-full border border-emerald-300/20 bg-emerald-400/10 px-2.5 py-1 text-xs font-medium text-emerald-200">{project.match_percentage}% Match</span>}
+    </div>{action}</div>
     <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-300">
       <span>Client budget: {money(project.client_budget)}</span><span>Developer payout: {money(project.developer_payout)}</span>
     </div>
-  </article>;
+  </motion.article>;
 }
 
 function Balance({ label, value }: { label: string; value: number }) {

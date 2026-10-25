@@ -12,6 +12,50 @@ from app.schemas.project import ProjectMilestoneRead, ProjectRead
 
 router = APIRouter()
 
+SKILL_ALIASES = {
+    "react": {"react", "frontend", "javascript", "typescript", "web"},
+    "fastapi": {"fastapi", "python", "backend", "api"},
+    "python": {"python", "fastapi", "backend", "api"},
+    "payments": {"payment", "payments", "stripe", "razorpay", "checkout"},
+    "online payment": {"payment", "payments", "stripe", "razorpay", "checkout"},
+    "whatsapp bot": {"whatsapp", "bot", "automation"},
+    "inventory": {"inventory", "stock", "products"},
+    "admin panel": {"admin", "dashboard", "panel", "frontend"},
+    "mobile pwa": {"mobile", "pwa", "react", "frontend"},
+    "desktop": {"desktop", "electron"},
+    "docker": {"docker", "devops", "deployment"},
+}
+
+
+def _skill_terms(value: str) -> set[str]:
+    normalized = value.casefold().strip()
+    terms = {normalized}
+    terms.update(part for part in normalized.replace("-", " ").replace("/", " ").split() if len(part) > 2)
+    terms.update(SKILL_ALIASES.get(normalized, set()))
+    return terms
+
+
+def calculate_skill_match(skills: list[str], project: Project) -> int:
+    preferences = project.design_preferences or {}
+    developer_terms: set[str] = set()
+    for skill in skills:
+        developer_terms.update(_skill_terms(skill))
+
+    requirements: list[tuple[str, int]] = []
+    requirements.extend((str(item), 3) for item in preferences.get("tech_stack", []))
+    requirements.extend((str(item), 1) for item in preferences.get("features", []))
+    requirements.extend((str(item), 1) for item in preferences.get("payment_methods", []))
+    if not requirements:
+        return 0
+
+    total_weight = sum(weight for _, weight in requirements)
+    matched_weight = 0
+    for requirement, weight in requirements:
+        terms = _skill_terms(requirement)
+        if developer_terms.intersection(terms):
+            matched_weight += weight
+    return round(100 * matched_weight / total_weight)
+
 
 @router.get("/projects/available", response_model=list[ProjectRead])
 async def list_available_projects(
@@ -25,9 +69,15 @@ async def list_available_projects(
         )
     )
     projects = list(result.scalars().all())
-    if current_user.skills:
-        projects = [p for p in projects if set(current_user.skills).intersection(p.design_preferences.get("features", [])) or not p.design_preferences]
-    return projects
+    scored_projects = [
+        (project, calculate_skill_match(current_user.skills or [], project))
+        for project in projects
+    ]
+    scored_projects.sort(key=lambda item: item[1], reverse=True)
+    return [
+        {**ProjectRead.model_validate(project).model_dump(), "match_percentage": match}
+        for project, match in scored_projects
+    ]
 
 
 @router.post("/projects/{project_id}/claim", response_model=ProjectRead)

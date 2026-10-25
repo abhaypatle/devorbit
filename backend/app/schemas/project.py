@@ -9,6 +9,14 @@ class DesignPreferences(BaseModel):
     colors: dict[str, str] = Field(default_factory=dict)
     sample_links: list[str] = Field(default_factory=list)
     features: list[str] = Field(default_factory=list)
+    tech_stack: list[str] = Field(default_factory=list)
+    target_platform: str = "Web App"
+    languages: list[str] = Field(default_factory=lambda: ["English"])
+    auth_preference: str = "Email"
+    payment_methods: list[str] = Field(default_factory=list)
+    urgency: str = "STANDARD"
+    theme: str = "Indigo Tech"
+    template_archetype: str = "Storefront"
     logo_url: str | None = None
     font_preference: str | None = None
 
@@ -75,6 +83,7 @@ class ProjectRead(BaseModel):
     staging_preview_url: str | None = None
     is_watermarked: bool
     created_at: datetime | None = None
+    match_percentage: int | None = None
 
 
 class ProjectProgressRead(BaseModel):
