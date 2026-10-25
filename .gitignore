@@ -1,0 +1,9 @@
+# .gitignore
+node_modules/
+frontend/dist/
+backend/.venv/
+backend/__pycache__/
+backend/.env
+backend/*.db
+*.pyc
+.DS_Store
